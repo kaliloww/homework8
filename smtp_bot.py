@@ -1,59 +1,63 @@
-from aiogram import Bot, Dispatcher, types, executor
-import os, smtplib
-from logging import basicConfig, INFO
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram import Dispatcher, Bot, executor, types
 from dotenv import load_dotenv
-import random 
+from email.message import EmailMessage
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+import smtplib, os, random
+from config import token
+import logging
 
-load_dotenv(".env")
-basicConfig(level=INFO)
 
-bot = Bot(os.environ.get('token'))
-dp = Dispatcher(bot)
 
-inline_buttons = [
-    types.InlineKeyboardButton("Идентификация", callback_data='identification')
-]
+from aiogram.dispatcher import FSMContext
+from bs4 import BeautifulSoup
 
-inline_keyboard = types.InlineKeyboardMarkup().add(*inline_buttons)
+import requests
+from config import token
 
+
+bot = Bot(token=token)
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
+logging.basicConfig(level=logging.INFO)
+
+load_dotenv('.env')
+
+num = random.randint(100000, 999999)
 @dp.message_handler(commands='start')
-async def start(message:types.Message):
-    await message.answer(f'добро пожаловать {message.from_user.first_name}', reply_markup=inline_keyboard)
-
-
-
-
-
-@dp.callback_query_handler(lambda c: c.data == "identification")
-async def start_verification(callback_query: types.CallbackQuery):
-    await callback_query.message.answer("Пожалуйста, введите вашу почту:")
+async def start(message: types.Message):
+    await message.answer('мы отправили вам 6- значный код. введите этот код для подтверждения')
+    print(num)
     
-@dp.message_handler(lambda message: not message.text.startswith('/'))
-async def process_email(message: types.Message):
-    verification_code = str(random.randint(100000, 999999))
-    await send_verification_code(message.text, verification_code)
-    await message.answer("Мы отправили вам 6-значный код. Пожалуйста, введите его:")
 
-@dp.message_handler(lambda message: not message.text.startswith('/'))
-async def process_code(message: types.Message):
-    if message.text == verification_code:
-        await message.answer("Вы успешно идентифицировались!")
-    else:
-        await message.answer("Неправильный ввод. Пожалуйста, введите код еще раз:")
+    def send_message(title: str, message: str, to_email: str) -> bool:
+        sender = os.environ.get('smtp_email')
+        password = os.environ.get('smtp_password')
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        try:
+            server.login(sender, password)
+            msg = EmailMessage()
+            msg['Subject'] = title
+            msg['From'] = sender
+            msg['To'] = to_email
+            msg.set_content(message)
+            server.sendmail(sender, to_email, message)
+            return True
+        except Exception as error:
+            return False
+    print(send_message('code', str(num), 'asanalievurmat10@gmail.com'))
 
-def send_email(title, message, to_email):
-    sender = os.environ.get('smtp_email')
-    password = os.environ.get('smtp_password')
+count = []
+@dp.message_handler()
+async def get(message:types.Message):
+        if len(count) >= 3:
+                await message.answer('Превышен количество попыток')
 
-    server = smtplib.SMTP('smtp.gmail.com', 587)
-    server.starttls()
-
-    try:
-        server.login(sender, password)
-        server.sendmail(sender, to_email, message)
-        return "200 OK"
-    except Exception as error:
-        return f"Error: {error}"
-    
-if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+        elif message.text == str(num):
+                await message.answer('Вы успешно зарегистрировались')
+                
+        elif message.text != str(num):
+                count.append("Х")
+                await message.answer('Неправильный код подтверждения')
+                
